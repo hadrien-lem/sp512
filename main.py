@@ -9,27 +9,15 @@ R_EARTH = 6378.137 #km
 ROT_EARTH = 6.300387486749 #rad/day
 MU_EARTH = 3.986005e5 #km3/s2
 
-# Total losses from the injection altitude in m/s
-def dv_losses(z):
-    return (2.452e-3*z**2 + 1.051*z + 1387.5)
-
-# Velocity at the injection point in m/s
-def v_inj(m):
-    return np.sqrt(MU_EARTH * ( 2/(m['z_inj']+R_EARTH) - 2/(2*R_EARTH+m['z_inj']+m['z_a']) ))*1000
-
-# Velocity of earth in m/s
-def v_earth(i, azimut):
-    return ROT_EARTH*R_EARTH*np.cos(m['pad_lat'])*np.sin(azimut)/86.4
-
-# Optimization - Lagrange multiplier method
-def Omega(k):
+def omega(k):
     return k/(1+k)
 
+# Optimization - Lagrange multiplier method
 def get_b(bn, dv, isp, k):
     b = np.zeros(len(k))
     b[-1] = bn
     for j in range(len(b)-2, -1, -1):
-        b[j] = 1/Omega(k[j]) * (1 - isp[j+1]/isp[j] * (1-Omega(k[j+1])*b[j+1]))
+        b[j] = 1/omega(k[j]) * (1 - isp[j+1]/isp[j] * (1-omega(k[j+1])*b[j+1]))
     return b
 
 def find_b(bn, dv, isp, k):
@@ -42,12 +30,11 @@ def spec_mass_limit(j, mass, opt=''):
     return ''
 
 def spec_mass_distribution(j, mi, mf, ms):
-    if mi - (mf-ms) < mf - ms:
-        return f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
+    if mi-(mf-ms) < mf-ms : return f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
     return ''
 
-# Loop through all stages to get minimal mass. Return the combinaison of stage 
-def stages_min_mass(m):
+# Loop through all stages to get minimal mass. Return the staging
+def find_staging(m):
     masses = {}
     for i in range(len(st.all_comb)):
         comb = st.get_comb(i)
@@ -58,17 +45,20 @@ def stages_min_mass(m):
     return st.get_comb(int(key_min))
 
 # Result
-# Arguments : Mission and list of Stages
+# Arguments : Mission and list of stages
 def result(m, stage, silent=False):
     #Commun data
     isp = np.array([ s['Isp'] for s in stage ])
     k = np.array([ s['k'] for s in stage ])
     azimut = np.arcsin(np.cos(m['i'])/np.cos(m['pad_lat']))
     azimut = 2*np.pi+azimut if azimut < 0 else azimut
-    dv = v_inj(m) + dv_losses(m['z_inj']) - v_earth(m['pad_lat'], azimut)
+    v_inj = np.sqrt(MU_EARTH * (2/(m['z_inj']+R_EARTH) - 2/(2*R_EARTH+m['z_inj']+m['z_a'])))*1000
+    dv_losses = 2.452e-3*m['z_inj']**2 + 1.051*m['z_inj'] + 1387.5
+    v_earth = ROT_EARTH*R_EARTH*np.cos(m['pad_lat'])*np.sin(azimut)/86.4
+    dv = v_inj + dv_losses - v_earth
     
     # Find b
-    # result = optimize.root_scalar(find_b, bracket=[1, 100], args=(dv, isp, k)).root # NOT WORKING!!
+    # bn = optimize.root_scalar(find_b, bracket=[1, 100], args=(dv, isp, k)).root # NOT WORKING!!
     bn = optimize.least_squares(find_b, 3, args=(dv, isp, k)).x
     b = get_b(bn, dv, isp, k)
     a = (1+k)/b - k
@@ -83,20 +73,20 @@ def result(m, stage, silent=False):
     me = (1-a)/(1+k)*mi
     ms = k*me
     
-    # Structural mass specification
+    # Test the mass specifications
     errors = ''
     for j in range(len(stage)):
         errors += spec_mass_limit(j, ms[j], stage)
         errors += spec_mass_distribution(j, mi[j], mf[j], ms[j])
 
-    # Pretty results
+    # Show results
     if not silent :
         print(f"----- Mission -----\
                 \n\tMission n°{m['number']}\
                 \n\tClient : {m['client']}, payload : {m['m_u']} kg\
                 \n\tBase : {m['pad_loc']}, {np.rad2deg(m['pad_lat']):.2f}°\
                 \n\tz_inj : {m['z_inj']} km, z_a : {m['z_a']} km, i : {np.rad2deg(m['i']):.2f}°, azimut : {np.rad2deg(azimut):.2f}°\
-                \n\tΔv : {dv:.2f} m/s, Δv_inj : {v_inj(m):.2f} m/s, Δv_losses : {dv_losses(m['z_inj']):.2f} m/s, Δv_earth : {v_earth(m['pad_lat'], azimut):.2f} m/s")
+                \n\tΔv : {dv:.2f} m/s, Δv_inj : {v_inj:.2f} m/s, Δv_losses : {dv_losses:.2f} m/s, Δv_earth : {v_earth:.2f} m/s")
         print('\n----- Stages -----')
         for j, s in enumerate(stage):
             print(f"- Stage {j}\
@@ -106,7 +96,7 @@ def result(m, stage, silent=False):
                     \n\tΔv : {isp[j]*G0*np.log(b[j]):.2f} m/s")
         if errors : print(f'\n----- Errors -----\n{errors}')
     
-    # Test results
+    # Output results
     output = {
         'm_u': m['m_u'],
         'mission': str(m['number']),
@@ -126,8 +116,8 @@ def result(m, stage, silent=False):
     return output
 
 m = mission.m1
-stages = stages_min_mass(m)
+stages = find_staging(m)
 # stages = [ st.loxrp1_atm, st.loxrp1_spa, st.loxlh2_spa ]
 output = result(m, stages)
-# use test_selenium only if you have installed selenium
+# use test_selenium only if you have selenium
 test_selenium(output)
