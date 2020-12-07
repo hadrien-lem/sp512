@@ -23,16 +23,6 @@ def get_b(bn, dv, isp, k):
 def find_b(bn, dv, isp, k):
     return dv - np.sum(G0*isp*np.log(get_b(bn, dv, isp, k)))
 
-# Mass spec test
-def spec_mass_limit(j, mass, opt=''):
-    if mass < st.mass_spec[f's{j}_min'] : return f'Stage {j} : structural mass too light {mass}\n'
-    elif mass > st.mass_spec[f's{j}_max'] : return f'Stage {j} : structural mass too heavy {mass}\n'
-    return ''
-
-def spec_mass_distribution(j, mi, mf, ms):
-    if mi-(mf-ms) < mf-ms : return f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
-    return ''
-
 # Loop through all stages to get minimal mass. Return the staging
 def find_staging(m):
     masses = {}
@@ -76,8 +66,13 @@ def result(m, stage, silent=False):
     # Test the mass specifications
     errors = ''
     for j in range(len(stage)):
-        errors += spec_mass_limit(j, ms[j], stage)
-        errors += spec_mass_distribution(j, mi[j], mf[j], ms[j])
+        # Structural mass limits
+        if ms[j] < st.mass_spec[f's{j}_min'] : errors += f'Stage {j} : structural mass too light {ms[j]}\n'
+        elif ms[j] > st.mass_spec[f's{j}_max'] : errors += f'Stage {j} : structural mass too heavy {ms[j]}\n'
+        # Mass distribution
+        if mi[j]-(mf[j]-ms[j]) < mf[j]-ms[j] : errors += f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
+    # Total mass limit
+    if mi[0] > 1.5e6 : errors += f'Initial mass to heavy {mi[0]}\n'
 
     # Show results
     if not silent :
