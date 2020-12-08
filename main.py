@@ -70,7 +70,7 @@ def result(m, stage, silent=False):
         if ms[j] < st.mass_spec[f's{j}_min'] : errors += f'Stage {j} : structural mass too light {ms[j]}\n'
         elif ms[j] > st.mass_spec[f's{j}_max'] : errors += f'Stage {j} : structural mass too heavy {ms[j]}\n'
         # Mass distribution
-        if mi[j]-(mf[j]-ms[j]) < mf[j]-ms[j] : errors += f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
+        if ms[j]+me[j] < mf[j]-ms[j] : errors += f'Stage {j}: Stage too light, total up stage heavier than this stage\n'
     # Total mass limit
     if mi[0] > 1.5e6 : errors += f'Initial mass to heavy {mi[0]}\n'
 
